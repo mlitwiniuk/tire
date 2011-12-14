@@ -1,10 +1,11 @@
 module Tire
-  VERSION   = "0.3.5"
+  VERSION   = "0.3.12"
 
   CHANGELOG =<<-END
     IMPORTANT CHANGES LATELY:
 
-    # Added a "query" facet for free-form aggregations
-
+    * Loosened dependency specification for Bundler
+    * Do not store `id` and `type` properties in ES _source document
+    * Refactorings
   END
 end

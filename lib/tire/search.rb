@@ -4,18 +4,20 @@ module Tire
   
     class Search
 
-      attr_reader :indices, :url, :results, :response, :json, :query, :facets, :filters, :options
+      attr_reader :indices, :results, :response, :json, :query, :facets, :filters, :options
 
       def initialize(indices=nil, options = {}, &block)
         @indices = Array(indices)
+        @types   = Array(options.delete(:type))
         @options = options
-        @type    = @options[:type]
 
-        @url     = Configuration.url+['/', @indices.join(','), @type, '_search'].compact.join('/').squeeze('/')
+        @path    = ['/', @indices.join(','), @types.join(','), '_search'].compact.join('/').squeeze('/')
 
-        # TODO: Do not allow changing the wrapper here or set it back after yield
-        Configuration.wrapper @options[:wrapper] if @options[:wrapper]
         block.arity < 1 ? instance_eval(&block) : block.call(self) if block_given?
+      end
+
+      def url
+        Configuration.url + @path
       end
 
       def query(&block)
@@ -68,10 +70,10 @@ module Tire
       end
 
       def perform
-        @response = Configuration.client.get(@url, self.to_json)
+        @response = Configuration.client.get(self.url, self.to_json)
         if @response.failure?
           STDERR.puts "[REQUEST FAILED] #{self.to_curl}\n"
-          raise SearchRequestFailed
+          raise SearchRequestFailed, @response.to_s
         end
         @json     = MultiJson.decode(@response.body)
         @results  = Results::Collection.new(@json, @options)
@@ -81,7 +83,7 @@ module Tire
       end
 
       def to_curl
-        %Q|curl -X GET "#{@url}?pretty=true" -d '#{self.to_json}'|
+        %Q|curl -X GET "#{self.url}?pretty=true" -d '#{self.to_json}'|
       end
 
       def to_hash
@@ -89,7 +91,8 @@ module Tire
         request.update( { :query  => @query.to_hash } )    if @query
         request.update( { :sort   => @sort.to_ary   } )    if @sort
         request.update( { :facets => @facets.to_hash } )   if @facets
-        @filters.each { |filter| request.update( { :filter => filter.to_hash } ) } if @filters
+        request.update( { :filter => @filters.first.to_hash } ) if @filters && @filters.size == 1
+        request.update( { :filter => { :and => @filters.map { |filter| filter.to_hash } } } ) if  @filters && @filters.size > 1
         request.update( { :highlight => @highlight.to_hash } ) if @highlight
         request.update( { :size => @size } )               if @size
         request.update( { :from => @from } )               if @from
@@ -106,20 +109,21 @@ module Tire
 
           Configuration.logger.log_request '_search', indices, to_curl
 
-          took = @json['took'] rescue nil
+          took = @json['took']  rescue nil
+          code = @response.code rescue nil
 
           if Configuration.logger.level.to_s == 'debug'
             # FIXME: Depends on RestClient implementation
             body = if @json
               defined?(Yajl) ? Yajl::Encoder.encode(@json, :pretty => true) : MultiJson.encode(@json)
             else
-              @response.body
+              @response.body rescue nil
             end
           else
             body = ''
           end
 
-          Configuration.logger.log_response @response.code, took, body
+          Configuration.logger.log_response code || 'N/A', took || 'N/A', body || 'N/A'
         end
       end
 

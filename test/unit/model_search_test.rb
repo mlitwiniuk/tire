@@ -160,8 +160,8 @@ module Tire
           setup do
             @q = 'foo AND bar'
 
-            Tire::Search::Query.any_instance.expects(:string).with( @q ).returns(@stub)
-            Tire::Search::Search.any_instance.expects(:perform).returns(@stub)
+            Tire::Search::Query.any_instance.expects(:string).at_least_once.with(@q).returns(@stub)
+            Tire::Search::Search.any_instance.expects(:perform).at_least_once.returns(@stub)
           end
 
           should "search for query string" do
@@ -211,6 +211,14 @@ module Tire
             Tire::Search::Search.any_instance.expects(:from).with(20)
 
             ActiveModelArticle.search @q, :per_page => 10, :page => 3
+          end
+
+          should "allow to limit returned fields" do
+            Tire::Search::Search.any_instance.expects(:fields).with(["id"])
+            ActiveModelArticle.search @q, :fields => 'id'
+
+            Tire::Search::Search.any_instance.expects(:fields).with(["id", "title"])
+            ActiveModelArticle.search @q, :fields => ['id', 'title']
           end
 
         end
@@ -287,6 +295,38 @@ module Tire
             assert_equal 'snowball', ModelWithCustomMapping.mapping[:title][:analyzer]
           end
 
+          should "create the index with proper mapping options" do
+            expected = {
+              :settings => {},
+              :mappings => {
+                :model_with_custom_mapping_and_options => {
+                  :_source    => { :compress => true  },
+                  :_all       => { :enabled  => false },
+                  :properties => { :title => { :type => 'string', :analyzer => 'snowball', :boost => 10 } }
+                }
+              }
+            }
+
+            Tire::Index.any_instance.expects(:create).with(expected)
+
+            class ::ModelWithCustomMappingAndOptions
+              extend ActiveModel::Naming
+              extend ActiveModel::Callbacks
+
+              include Tire::Model::Search
+              include Tire::Model::Callbacks
+
+              mapping :_source => { :compress => true }, :_all => { :enabled => false } do
+                indexes :title, :type => 'string', :analyzer => 'snowball', :boost => 10
+              end
+
+            end
+
+            assert_equal 'snowball', ModelWithCustomMappingAndOptions.mapping[:title][:analyzer]
+            assert_equal true,       ModelWithCustomMappingAndOptions.mapping_options[:_source][:compress]
+            assert_equal false,      ModelWithCustomMappingAndOptions.mapping_options[:_all][:enabled]
+          end
+
           should "not raise an error when defining mapping" do
             Tire::Index.any_instance.unstub(:exists?)
             Configuration.client.expects(:head).raises(Errno::ECONNREFUSED)
@@ -345,6 +385,28 @@ module Tire
 
             assert_not_nil ModelWithNestedMapping.mapping[:author][:properties][:last_name]
             assert_equal   100, ModelWithNestedMapping.mapping[:author][:properties][:last_name][:boost]
+          end
+
+          should "define mapping for nested documents" do
+            class ::ModelWithNestedDocuments
+              extend ActiveModel::Naming
+              extend ActiveModel::Callbacks
+
+              include Tire::Model::Search
+              include Tire::Model::Callbacks
+
+              mapping do
+                indexes :comments, :type => 'nested', :include_in_parent => true do
+                  indexes :author_name
+                  indexes :body, :boost => 100
+                end
+              end
+
+            end
+
+            assert_equal 'nested', ModelWithNestedDocuments.mapping[:comments][:type]
+            assert_not_nil         ModelWithNestedDocuments.mapping[:comments][:properties][:author_name]
+            assert_equal 100,      ModelWithNestedDocuments.mapping[:comments][:properties][:body][:boost]
           end
 
         end
@@ -451,6 +513,26 @@ module Tire
           should "serialize itself into JSON without 'root'" do
             @model = ActiveModelArticle.new 'title' => 'Test'
             assert_equal({'title' => 'Test'}.to_json, @model.to_indexed_json)
+          end
+
+          should "not include the ID property in serialized document (_source)" do
+            @model = ActiveModelArticle.new 'id' => 1, 'title' => 'Test'
+            assert_nil MultiJson.decode(@model.to_indexed_json)[:id]
+            assert_nil MultiJson.decode(@model.to_indexed_json)['id']
+
+            @model = SupermodelArticle.new 'id' => 1, 'title' => 'Test'
+            assert_nil MultiJson.decode(@model.to_indexed_json)[:id]
+            assert_nil MultiJson.decode(@model.to_indexed_json)['id']
+          end
+
+          should "not include the type property in serialized document (_source)" do
+            @model = ActiveModelArticle.new 'type' => 'foo', 'title' => 'Test'
+            assert_nil MultiJson.decode(@model.to_indexed_json)[:type]
+            assert_nil MultiJson.decode(@model.to_indexed_json)['type']
+
+            @model = SupermodelArticle.new 'type' => 'foo', 'title' => 'Test'
+            assert_nil MultiJson.decode(@model.to_indexed_json)[:type]
+            assert_nil MultiJson.decode(@model.to_indexed_json)['type']
           end
 
           should "serialize itself with serializable_hash when no mapping is set" do

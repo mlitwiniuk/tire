@@ -89,6 +89,9 @@ module Tire
             block.arity < 1 ? s.instance_eval(&block) : block.call(s)
           else
             s.query { string query }
+            # TODO: Actualy, allow passing all the valid options from
+            # <http://www.elasticsearch.org/guide/reference/api/search/uri-request.html>
+            s.fields Array(options[:fields]) if options[:fields]
           end
 
           s.perform.results
@@ -150,7 +153,7 @@ module Tire
         #
         def to_indexed_json
           if instance.class.tire.mapping.empty?
-            instance.to_hash.to_json
+            instance.to_hash.reject {|key,_| key.to_s == 'id' || key.to_s == 'type' }.to_json
           else
             instance.to_hash.
             reject { |key, value| ! instance.class.tire.mapping.keys.map(&:to_s).include?(key.to_s) }.

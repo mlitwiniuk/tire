@@ -22,6 +22,14 @@ module Tire::Search
                         Facet.new('foo', :global => true).terms(:bar).to_json )
         end
 
+        should "pass options to facets" do
+          payload = Facet.new('foo', :facet_filter => { :term => { :account_id => 'foo' } }).terms(:bar).to_hash
+
+          assert_not_nil payload['foo'][:facet_filter]
+          assert_equal( { :term => { :account_id => 'foo' } },
+                        payload['foo'][:facet_filter] )
+        end
+
         should "encode facet options" do
           assert_equal( { :foo => { :terms => {:field=>'bar',:size=>5,:all_terms=>false} } }.to_json,
                         Facet.new('foo').terms(:bar, :size => 5).to_json )
@@ -46,6 +54,11 @@ module Tire::Search
           assert_equal true, Facet.new('foo') { terms :foo, :all_terms => true }.to_hash['foo'][:terms][:all_terms]
         end
 
+        should "encode custom options" do
+          assert_equal( { :foo => { :terms => {:field=>'bar',:size=>5,:all_terms=>false,:exclude=>['moo']} } }.to_json,
+                        Facet.new('foo').terms(:bar, :size => 5, :exclude => ['moo']).to_json )
+        end
+
       end
 
       context "date histogram" do
@@ -58,6 +71,12 @@ module Tire::Search
         should "encode the JSON with custom interval" do
           f = Facet.new('date') { date :published_on, :interval => 'month' }
           assert_equal({ :date => { :date_histogram => { :field => 'published_on', :interval => 'month' } } }.to_json, f.to_json)
+        end
+
+        should "encode custom options" do
+          f = Facet.new('date') { date :published_on, :value_field => 'price'  }
+          assert_equal( {:date=>{:date_histogram=>{:field=>'published_on',:interval=>'day',:value_field=>'price' } } }.to_json,
+                        f.to_json )
         end
 
       end

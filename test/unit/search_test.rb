@@ -5,7 +5,7 @@ module Tire
   class SearchTest < Test::Unit::TestCase
 
     context "Search" do
-      setup { Configuration.reset :logger }
+      setup { Configuration.reset }
 
       should "be initialized with single index" do
         s = Search::Search.new('index') { query { string 'foo' } }
@@ -134,6 +134,31 @@ module Tire
         Search::Search.new('index').perform
       end
 
+      should "log the original exception on failed request" do
+        Configuration.logger STDERR
+
+        Configuration.client.expects(:get).raises(Errno::ECONNREFUSED)
+        Configuration.logger.expects(:log_response).with('N/A', 'N/A', '')
+
+        assert_raise Errno::ECONNREFUSED do
+          Search::Search.new('index').perform
+        end
+      end
+
+      should "allow to set the server url" do
+        search = Search::Search.new('indexA')
+        Configuration.url 'http://es1.example.com'
+
+        Configuration.client.
+          expects(:get).
+            with do |url, payload|
+              url == 'http://es1.example.com/indexA/_search'
+            end.
+          returns(mock_response( '{"took":1,"hits":{"total": 0, "hits" : []}}', 200 ))
+
+        search.perform
+      end
+
       context "sort" do
 
         should "allow sorting by multiple fields" do
@@ -181,8 +206,27 @@ module Tire
           end
 
           assert_equal 1, s.filters.size
+
           assert_not_nil s.filters.first
           assert_not_nil s.filters.first[:terms]
+
+          assert_equal( {:terms => {:tags => ['foo']}}.to_json,
+                        s.to_hash[:filter].to_json )
+        end
+
+        should "allow to add multiple filters" do
+          s = Search::Search.new('index') do
+            filter :terms, :tags  => ['foo']
+            filter :term,  :words => 125
+          end
+
+          assert_equal 2, s.filters.size
+
+          assert_not_nil  s.filters.first[:terms]
+          assert_not_nil  s.filters.last[:term]
+
+          assert_equal( { :and => [ {:terms => {:tags => ['foo']}}, {:term => {:words => 125}} ] }.to_json,
+                        s.to_hash[:filter].to_json )
         end
 
       end

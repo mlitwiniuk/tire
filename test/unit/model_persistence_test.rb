@@ -65,6 +65,7 @@ module Tire
           ] } }
           @find_first = { 'hits' => { 'hits' => [ @first ] } }
           @find_last_two = { 'hits' => { 'hits' => [ @second, @third ] } }
+          @find_twenty_ids = { 'hits' => { 'hits' => 20.times.map { @first }   } }
         end
 
         should "find document by numeric ID" do
@@ -113,6 +114,15 @@ module Tire
           documents = PersistentArticle.find [2, 3]
 
           assert_equal 2, documents.count
+        end
+
+        should "find all documents listed in IDs array" do
+          ids = (1..20).to_a
+          Configuration.client.expects(:get).returns(mock_response(@find_twenty_ids.to_json))
+          Tire::Search::Search.any_instance.expects(:size).with(ids.size)
+
+          documents = PersistentArticle.find ids
+          assert_equal ids.size, documents.count
         end
 
         should "find all documents" do
@@ -185,15 +195,10 @@ module Tire
             assert_nil article.published_on
           end
 
-          should_eventually "return default value for attribute" do
-            article = PersistentArticle.new :title => 'Test'
-            article.class_eval do
-              property :title
-              property :tags, :default => []
-            end
-
-            assert_nothing_raised { article.tags }
-            assert_equal [], article.tags
+          should "return default value for attribute" do
+            article = PersistentArticleWithDefaults.new :title => 'Test'
+            assert_equal [],    article.tags
+            assert_equal false, article.hidden
           end
 
           should "have query method for attribute" do
@@ -261,6 +266,37 @@ module Tire
 
         end
 
+        context "with casting" do
+
+          should "cast the value as custom class" do
+            article = PersistentArticleWithCastedItem.new :title => 'Test',
+                                                          :author => { :first_name => 'John', :last_name => 'Smith' }
+            assert_instance_of Author, article.author
+            assert_equal 'John', article.author.first_name
+          end
+
+          should "cast the value as collection of custom classes" do
+            article = PersistentArticleWithCastedCollection.new :title => 'Test',
+                                                                :comments => [{:nick => '4chan', :body => 'WHY U NO?'}]
+            assert_instance_of Array,   article.comments
+            assert_instance_of Comment, article.comments.first
+            assert_equal '4chan',       article.comments.first.nick
+          end
+
+          should "automatically format strings in UTC format as Time" do
+            article = PersistentArticle.new :published_on => '2011-11-01T23:00:00Z'
+            assert_instance_of Time, article.published_on
+            assert_equal 2011, article.published_on.year
+          end
+
+          should "cast anonymous Hashes as Hashr instances" do
+            article = PersistentArticleWithCastedItem.new :stats => { :views => 100, :meta => { :tags => 'A' }  }
+            assert_equal 100, article.stats.views
+            assert_equal 'A', article.stats.meta.tags
+          end
+
+        end
+
         context "when creating" do
 
           should "save the document with generated ID in the database" do
@@ -284,7 +320,6 @@ module Tire
                                  with do |url, payload|
                                    doc = MultiJson.decode(payload)
                                    url == "#{Configuration.url}/persistent_articles/persistent_article/r2d2" &&
-                                   doc['id'] == 'r2d2' &&
                                    doc['title'] == 'Test' &&
                                    doc['published_on'] == nil
                                  end.
@@ -309,7 +344,6 @@ module Tire
                                  with do |url, payload|
                                    doc = MultiJson.decode(payload)
                                    url == "#{Configuration.url}/persistent_articles/persistent_article/" &&
-                                   doc['id'] == nil &&
                                    doc['title'] == 'Test'
                                  end.
                                  returns(mock_response('{"ok":true,"_id":"1"}'))
@@ -323,7 +357,6 @@ module Tire
                                   with do |url, payload|
                                     doc = MultiJson.decode(payload)
                                     url == "#{Configuration.url}/persistent_articles/persistent_article/123" &&
-                                    doc['id'] == '123' &&
                                     doc['title'] == 'Test' &&
                                     doc['published_on'] == nil
                                   end.
@@ -344,7 +377,6 @@ module Tire
                                  with do |url, payload|
                                    doc = MultiJson.decode(payload)
                                    url == "#{Configuration.url}/persistent_articles/persistent_article/1" &&
-                                   doc['id'] == '1' &&
                                    doc['title'] == 'Test' &&
                                    doc['published_on'] == nil
                                  end.
@@ -357,7 +389,6 @@ module Tire
                                  with do |url, payload|
                                    doc = MultiJson.decode(payload)
                                    url == "#{Configuration.url}/persistent_articles/persistent_article/1" &&
-                                   doc['id'] == '1' &&
                                    doc['title'] == 'Updated'
                                  end.
                                  returns(mock_response('{"ok":true,"_id":"1"}'))
@@ -369,7 +400,7 @@ module Tire
             assert ! article.save
           end
 
-          should "set the id property" do
+          should "set the id property itself" do
             article = PersistentArticle.new
             article.title = 'Test'
 
@@ -389,7 +420,6 @@ module Tire
                                  with do |url, payload|
                                    doc = MultiJson.decode(payload)
                                    url == "#{Configuration.url}/persistent_articles/persistent_article/456" &&
-                                   doc['id'] == '456' &&
                                    doc['title'] == 'Test'
                                  end.
                                  returns(mock_response('{"ok":true,"_id":"XXX"}'))
@@ -406,7 +436,6 @@ module Tire
                                  with do |url, payload|
                                    doc = MultiJson.decode(payload)
                                    url == "#{Configuration.url}/persistent_articles/persistent_article/123" &&
-                                   doc['id'] == '123' &&
                                    doc['title'] == 'Test'
                                  end.returns(mock_response('{"ok":true,"_id":"123"}'))
 

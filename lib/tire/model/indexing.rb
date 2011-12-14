@@ -31,21 +31,24 @@ module Tire
         # for the corresponding index, telling _ElasticSearch_ how to understand your documents:
         # what type is which property, whether it is analyzed or no, which analyzer to use, etc.
         #
+        # You may pass the top level mapping properties (such as `_source` or `_all`) as a Hash.
+        #
         # Usage:
         #
         #     class Article
         #       # ...
-        #       mapping do
+        #       mapping :_source => { :compress => true } do
         #         indexes :id,    :type => 'string',  :index    => :not_analyzed
         #         indexes :title, :type => 'string',  :analyzer => 'snowball',   :boost => 100
         #         # ...
         #       end
         #     end
         #
-        def mapping
+        def mapping(*args)
           @mapping ||= {}
           if block_given?
-            @store_mapping = true and yield and @store_mapping = false
+            @mapping_options = args.pop
+            yield
             create_elasticsearch_index
           else
             @mapping
@@ -68,15 +71,14 @@ module Tire
         # for more information.
         #
         def indexes(name, options = {}, &block)
-          options[:type] ||= 'string'
-
           if block_given?
-            mapping[name] ||= { :type => 'object', :properties => {} }
+            mapping[name] ||= { :type => 'object', :properties => {} }.update(options)
             @_nested_mapping = name
             nested = yield
             @_nested_mapping = nil
             self
           else
+            options[:type] ||= 'string'
             if @_nested_mapping
               mapping[@_nested_mapping][:properties][name] = options
             else
@@ -97,12 +99,12 @@ module Tire
                       "(The original exception was: #{e.inspect})"
         end
 
-        def store_mapping?
-          @store_mapping || false
+        def mapping_options
+          @mapping_options || {}
         end
 
         def mapping_to_hash
-          { document_type.to_sym => { :properties => mapping } }
+          { document_type.to_sym => mapping_options.merge({ :properties => mapping }) }
         end
 
       end

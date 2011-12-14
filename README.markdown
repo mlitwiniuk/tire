@@ -359,7 +359,7 @@ example Rails application, with an `ActiveRecord` model and a search form, to pl
 (it even downloads _ElasticSearch_ itself, generates the application skeleton and leaves you with
 a _Git_ repository to explore the steps and the code):
 
-    $ rails new searchapp -m https://github.com/karmi/tire/raw/master/examples/rails-application-template.rb
+    $ rails new searchapp -m https://raw.github.com/karmi/tire/master/examples/rails-application-template.rb
 
 For the rest of us, let's suppose you have an `Article` class in your _Rails_ application.
 
@@ -671,12 +671,11 @@ Well, things stay mostly the same:
       include Tire::Model::Search
       include Tire::Model::Callbacks
 
-      # Let's use a different index name so stuff doesn't get mixed up
+      # Let's use a different index name so stuff doesn't get mixed up.
       #
       index_name 'mongo-articles'
 
-      # These Mongo guys sure do some funky stuff with their IDs
-      # in +serializable_hash+, let's fix it.
+      # These Mongo guys sure do get funky with their IDs in +serializable_hash+, let's fix it.
       #
       def to_indexed_json
         self.to_json
@@ -696,35 +695,30 @@ _Tire_ implements not only _searchable_ features, but also _persistence_ feature
 
 Well, because you're tired of database migrations and lots of hand-holding with your
 database to store stuff like `{ :name => 'Tire', :tags => [ 'ruby', 'search' ] }`.
-Because what you need is to just dump a JSON-representation of your data into a database and
-load it back when needed.
+Because all you need, really, is to just dump a JSON-representation of your data into a database and load it back again.
 Because you've noticed that _searching_ your data is a much more effective way of retrieval
 then constructing elaborate database query conditions.
-Because you have _lots_ of data and want to use _ElasticSearch's_
-advanced distributed features.
+Because you have _lots_ of data and want to use _ElasticSearch's_ advanced distributed features.
 
-To use the persistence features, just include the `Tire::Persistence` module in your class and define the properties (like with _CouchDB_- or _MongoDB_-based models):
+All good reasons to use _ElasticSearch_ as a schema-free and highly-scalable storage and retrieval/aggregation engine for your data.
+
+To use the persistence mode, we'll include the `Tire::Persistence` module in our class and define its properties;
+we can add the standard mapping declarations, set default values, or define casting for the property to create
+lightweight associations between the models.
 
 ```ruby
     class Article
       include Tire::Model::Persistence
-      include Tire::Model::Search
-      include Tire::Model::Callbacks
 
       validates_presence_of :title, :author
 
-      property :title
-      property :author
-      property :content
-      property :published_on
+      property :title,        :analyzer => 'snowball'
+      property :published_on, :type => 'date'
+      property :tags,         :default => [], :analyzer => 'keyword'
+      property :author,       :class => Author
+      property :comments,     :class => [Comment]
     end
 ```
-
-Of course, not all validations or `ActionPack` helpers will be available to your models,
-but if you can live with that, you've just got a schema-free, highly-scalable storage
-and retrieval engine for your data.
-
-This will result in Article instances being stored in an index called 'test_articles' when used in tests but in the index 'development_articles' when used in the development environment.
 
 Please be sure to peruse the [integration test suite](https://github.com/karmi/tire/tree/master/test/integration)
 for examples of the API and _ActiveModel_ integration usage.
@@ -734,22 +728,7 @@ Extensions and Additions
 ------------------------
 
 The [_tire-contrib_](http://github.com/karmi/tire-contrib/) project contains additions
-and extensions to the _Tire_ functionality.
-
-
-Todo, Plans & Ideas
--------------------
-
-_Tire_ is already used in production by its authors. Nevertheless, it's not considered finished yet.
-
-There are todos, plans and ideas, some of which are listed below, in the order of importance:
-
-* Proper RDoc annotations for the source code
-* [Statistical](http://www.elasticsearch.org/guide/reference/api/search/facets/statistical-facet.html) facets
-* [Geo Distance](http://www.elasticsearch.org/guide/reference/api/search/facets/geo-distance-facet.html) facets
-* [Index aliases](http://www.elasticsearch.org/guide/reference/api/admin-indices-aliases.html) management
-* [Analyze](http://www.elasticsearch.org/guide/reference/api/admin-indices-analyze.html) API support
-* Embedded webserver to display statistics and to allow easy searches
+and extensions to the core _Tire_ functionality — be sure to check them out.
 
 
 Other Clients

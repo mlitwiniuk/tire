@@ -7,9 +7,9 @@ module Tire
       else
         File.open(device, 'a')
       end
-      @device.sync = true
+      @device.sync = true if @device.respond_to?(:sync)
       @options = options
-      at_exit { @device.close unless @device.closed? }
+      at_exit { @device.close unless @device.closed? } if @device.respond_to?(:closed?) && @device.respond_to?(:close)
     end
 
     def level
@@ -46,8 +46,8 @@ module Tire
       content  = "# #{time}"
       content += " [#{status}]"
       content += " (#{took} msec)" if took
-      content += "\n#\n" unless json == ''
-      json.each_line { |line| content += "# #{line}" } unless json == ''
+      content += "\n#\n" unless json.to_s !~ /\S/
+      json.to_s.each_line { |line| content += "# #{line}" } unless json.to_s !~ /\S/
       content += "\n\n"
       write content
     end
